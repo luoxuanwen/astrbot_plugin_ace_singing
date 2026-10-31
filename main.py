@@ -616,7 +616,7 @@ def _qmc_unlock_data(data: bytes, ekey_str) -> tuple:
     "astrbot_plugin_ace_singing",
     "Wanch",
     "专注原声翻唱：QQ 音乐找歌 + Seed-VC V1 (44.1kHz) 神经歌声转换，支持人格专属翻唱音色映射与智能乐句吸附截取",
-    "1.10.3",
+    "1.10.4",
 )
 class AceSingingPlugin(Star):
     DEFAULT_VOICE_PROFILE = "112"
@@ -1523,12 +1523,13 @@ class AceSingingPlugin(Star):
         try:
             data = await self._download(u, ua=ua, referer=ref, extra=extra)
         except Exception as de:
-            logger.warning(f"[ace_singing] 下载失败 ({de}) URL: {u} (UA={ua[:20]}...)")
+            # 逐条失败属正常试错(CDN 前缀可能失效)，降为 DEBUG 避免刷屏；关键结果由上层汇总打印
+            logger.debug(f"[ace_singing] 下载失败 ({de}) URL: {u} (UA={ua[:20]}...)")
             return None
         if not ekey:
             return data
         q_label = quality or "加密流"
-        logger.warning(
+        logger.info(
             f"[ace_singing] 加密流探测成功 (品质: {q_label}): size={len(data)}B, ekey_len={len(ekey)}"
         )
         self._dump_ekey(song_mid, q_label, ekey)
@@ -2482,8 +2483,6 @@ class AceSingingPlugin(Star):
         cred = self._load_cred()
         cdn_sips, audio_purl, audio_filename, audio_ekey = await self._qq_url(c, song_mid, media_mid=song_media_mid)
 
-        header_variants = self._DOWNLOAD_HEADER_VARIANTS
-
         async def _try_download(u: str, combo_idx: int = 0, ekey: str = "", quality: str = ""):
             """下载 → （若带 ekey）QMCv2 本地解密恢复 QQ 源，失败返回 None。"""
             return await self._download_and_unlock(
@@ -2494,54 +2493,34 @@ class AceSingingPlugin(Star):
         dl_err = ""
         if not audio_purl:
             last_err = getattr(self, "_last_url_err", "")
-            # 1. 检查是否无凭据，或者凭据已失效/触发风控
+            # 检查是否无凭据，或者凭据已失效/触发风控
             if not cred or self._maybe_risk_control(last_err):
                 logger.info(f"[ace_singing] 未能取流且无凭据或触发风控 ({last_err})，唤起扫码登录")
                 await self._send(umo, [Plain(f"《{song_name}》需要 QQ 音乐登录凭据，正在唤起扫码授权...")])
                 await self._pop_login(umo, retry_info={"umo": umo, "keyword": keyword, "full": full_song})
                 return "已弹出扫码登录"
-            # 2. 凭据存在且非风控：普通通道无 purl，转加密通道 + 备用源兜底（不再直接放弃）
+            # 凭据存在且非风控：普通通道无 purl，转加密通道 + 备用源兜底
             logger.warning(f"[ace_singing] 普通通道无 purl ({last_err})，转加密通道 + 备用源兜底: mid={song_mid}")
             dl_err = f"普通通道无 purl: {last_err}"
-        else:
-            logger.info("[ace_singing] 正在下载音源...")
-
-            for u in self._audio_url_variants(audio_purl, cdn_sips, audio_filename):
-                audio_data = await _try_download(u, 0, audio_ekey)
+        elif audio_ekey:
+            # 策略（v1.10.4）：不再遍历明文直链。QQ 现对未加密 MP3 直链一律 404，
+            # 而 10 镜像 × 4 套 UA × 2 个品质 = 60~80 次请求全是白跑，白烧约 10 秒还刷屏日志。
+            # 手上有 ekey 就直接下加密链本地解密；只试 2 个 CDN 前缀（同文件不同前缀，内容一致）。
+            logger.info("[ace_singing] 跳过明文直链，直接下载加密链 + 本地 QMCv2 解密")
+            for combo_idx, u in enumerate(
+                self._audio_url_variants(audio_purl, cdn_sips, audio_filename)[:2]
+            ):
+                audio_data = await _try_download(u, combo_idx, audio_ekey)
                 if audio_data is not None:
                     break
             if audio_data is None:
-                # 换头组合扫前三个域名（手机 UA / Range 等）
-                for combo_idx in range(1, len(header_variants)):
-                    for u in self._audio_url_variants(audio_purl, cdn_sips, audio_filename)[:3]:
-                        audio_data = await _try_download(u, combo_idx, audio_ekey)
-                        if audio_data is not None:
-                            logger.info(f"[ace_singing] 命中的下载头组合 #{combo_idx}")
-                            break
-                    if audio_data is not None:
-                        break
-            if audio_data is None:
-                dl_err = "所有 CDN 镜像均下载失败"
-                logger.warning("[ace_singing] 所有 CDN 镜像均 404，尝试降级音质...")
-                if self._maybe_risk_control(dl_err):
-                    await self._send(umo, [Plain("音源下载触发风控，正在唤起重新扫码授权...")])
-                    await self._pop_login(umo, retry_info={"umo": umo, "keyword": keyword, "full": full_song})
-                    return "已弹出扫码登录"
-                try:
-                    degraded_sips, degraded_purl, degraded_filename, degraded_ekey = await self._qq_url(
-                        c, song_mid, media_mid=song_media_mid, downgrade=True
-                    )
-                    if degraded_purl:
-                        logger.info("[ace_singing] 降级为更低音质，重试动态 CDN...")
-                        for u in self._audio_url_variants(degraded_purl, degraded_sips, degraded_filename):
-                            audio_data = await _try_download(u, 0, degraded_ekey)
-                            if audio_data is not None:
-                                break
-                except Exception as e2:
-                    dl_err = f"{dl_err}; 降级取链: {e2}"
-                    logger.error(f"[ace_singing] 降级取链失败: {e2}")
+                dl_err = "加密链下载或解密失败"
+        else:
+            # 无 ekey 的明文链接同样跳过，直接交给加密通道按品质序列重新取源
+            logger.info("[ace_singing] 明文直链已全面 404，跳过直链，直接进入加密通道")
+            dl_err = "明文直链跳过（QQ 全面 404）"
 
-        # 3. 加密通道（GetEVkey + 本地 QMCv2 解密）：普通链全灭后尝试恢复 QQ 源
+        # 3. 加密通道（GetEVkey + 本地 QMCv2 解密）：这是当前 QQ 唯一可用的主通道
         if audio_data is None and cred:
             try:
                 audio_data = await self._qq_encrypted_probe(
