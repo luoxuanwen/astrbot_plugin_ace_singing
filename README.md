@@ -1,4 +1,4 @@
-# astrbot_plugin_ace_singing (v1.10.0)
+# astrbot_plugin_ace_singing (v1.10.1)
 
 专注原声翻唱的 AstrBot 插件：**QQ 音乐搜歌 + Seed-VC V1 (44.1kHz) 神经歌声转换 + 智能乐句起唱吸附 + 人格专属翻唱声线 + 推理进度回传 + 全参数即时热更新**。
 
@@ -116,7 +116,26 @@
 
 ---
 
-## 七、 免责声明
+## 七、 常见故障排查
+
+### 点唱直接失败：`AsyncSession.__init__() got an unexpected keyword argument 'allow_incoming_cookies'`
+
+**原因**：`qqmusic-api-python 0.8.2` 在构造 HTTP 会话时会传 `allow_incoming_cookies` 参数（`transport.py:354`），该参数自 **niquests 3.19.0** 才新增；环境里若装着 3.18.x 等旧版，`QMClient()` 一构造就抛 TypeError，点唱在「搜索歌曲」阶段即失败。
+
+**修复（推荐，一处命令）**——在 AstrBot 所在环境/容器内升级：
+
+```bash
+pip install -U "niquests[speedups]>=3.19"
+# Docker 部署：
+docker exec -it <AstrBot容器名> pip install -U "niquests[speedups]>=3.19"
+docker restart <AstrBot容器名>
+```
+
+**兜底**：v1.10.1 起插件内置 `_patch_niquests_compat()`，检测到旧版 niquests 时会自动吞掉该参数（旧版默认行为本就是接收响应 Cookie，语义等价），因此**只要同步了最新 `main.py`，不升级依赖也能用**；启动日志会打印 `niquests x.y.z 缺少 allow_incoming_cookies，已为 Session/AsyncSession 注入兼容层`。
+
+---
+
+## 八、 免责声明
 
 - 本插件的音乐搜索/下载能力依赖第三方音乐平台接口（含 QMCv2 本地解密），仅供个人学习研究，请勿用于商业用途；请支持正版音乐。
 - 翻唱产物涉及原曲词曲著作权与表演者权利，公开发布前请自行取得相应授权。

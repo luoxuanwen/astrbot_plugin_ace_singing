@@ -1,4 +1,7 @@
 aiohttp>=3.9
 qqmusic-api-python==0.8.2
-niquests[speedups]==3.18.7
+# qqmusic-api-python 0.8.2 构造会话时会传 allow_incoming_cookies（transport.py:354），
+# 该参数自 niquests 3.19.0 才有；装在 3.18.x 上会直接 TypeError 导致点唱全失败。
+# 若环境无法升级，插件内 _patch_niquests_compat() 会兜底吞掉该参数（语义等价于默认 True）。
+niquests[speedups]>=3.19.0,<4
 gradio-client>=0.17.0

@@ -171,6 +171,55 @@ def _patch_qqmusic_snapshot() -> None:
         logger.warning(f"[ace_singing] qqmusic_api Cookie 补丁未生效（库未安装或接口变动）: {e}")
 _patch_qqmusic_snapshot()
 
+# qqmusic_api>=0.8.2 的 NiquestsTransport 在构造会话时会传 allow_incoming_cookies，
+# 该参数是 niquests 3.19.0 才引入的。若运行环境里装着更旧的 niquests（requirements
+# 早期固定过 3.18.x），QMClient() 一被构造就抛 TypeError：
+#   AsyncSession.__init__() got an unexpected keyword argument 'allow_incoming_cookies'
+# 表现为「点唱必失败」。旧版本没有这个开关，默认行为本就是接收响应 Cookie（=True），
+# 与 qqmusic_api 的默认取值一致，因此在旧签名上静默丢弃该 kwarg 语义等价。
+def _patch_niquests_compat() -> None:
+    try:
+        import inspect
+
+        import niquests as _nq
+    except Exception as e:  # 未安装 niquests 时无需处理，交由上层报错
+        logger.debug(f"[ace_singing] niquests 兼容层跳过: {e}")
+        return
+
+    ver = getattr(_nq, "__version__", "?")
+    patched = []
+    for cls_name in ("Session", "AsyncSession"):
+        cls = getattr(_nq, cls_name, None)
+        if cls is None or getattr(cls, "_ace_allow_incoming_shim", False):
+            continue
+        try:
+            params = inspect.signature(cls.__init__).parameters
+        except (TypeError, ValueError):
+            continue
+        if "allow_incoming_cookies" in params:
+            continue  # 原生支持，无需干预
+        _orig_init = cls.__init__
+
+        def _ace_init(self, *args, __orig=_orig_init, **kwargs):
+            kwargs.pop("allow_incoming_cookies", None)
+            return __orig(self, *args, **kwargs)
+
+        cls.__init__ = _ace_init
+        cls._ace_allow_incoming_shim = True
+        patched.append(cls_name)
+
+    if patched:
+        logger.warning(
+            f"[ace_singing] niquests {ver} 缺少 allow_incoming_cookies，"
+            f"已为 {'/'.join(patched)} 注入兼容层；建议执行 "
+            f'pip install -U "niquests>=3.19" 对齐 qqmusic_api 0.8.2'
+        )
+    else:
+        logger.info(f"[ace_singing] niquests {ver} 原生支持 allow_incoming_cookies")
+
+
+_patch_niquests_compat()
+
 # ================= 拟人化文案与歌名清洗 =================
 _SONG_PREFIX_RE = re.compile(r"^\s*(?:点唱(?:一首)?|唱一首|唱(?:首歌)?|来一首|翻唱|点一首|听一首|来一(?:首歌|段))\s*")
 
@@ -559,7 +608,7 @@ def _qmc_unlock_data(data: bytes, ekey_str) -> tuple:
     "astrbot_plugin_ace_singing",
     "Wanch",
     "专注原声翻唱：QQ 音乐找歌 + Seed-VC V1 (44.1kHz) 神经歌声转换，支持人格专属翻唱音色映射与智能乐句吸附截取",
-    "1.10.0",
+    "1.10.1",
 )
 class AceSingingPlugin(Star):
     DEFAULT_VOICE_PROFILE = "112"
