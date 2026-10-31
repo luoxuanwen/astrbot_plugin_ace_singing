@@ -1,0 +1,4 @@
+aiohttp>=3.9
+qqmusic-api-python==0.8.2
+niquests[speedups]==3.18.7
+gradio-client>=0.17.0

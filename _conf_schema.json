@@ -1,0 +1,63 @@
+{
+  "cover_provider": {
+    "type": "string",
+    "description": "【翻唱提供商】下拉选择在 AstrBot「模型提供商」中配置的 Seed-VC 翻唱服务",
+    "default": "music",
+    "_special": "select_provider_tts"
+  },
+  "persona_cover_map": {
+    "type": "text",
+    "description": "【人格-翻唱音色映射】为人格指定专属翻唱声线（只影响翻唱，未配置则继承兜底音色）。支持 JSON 字典或换行文本",
+    "default": "{\"猫娘\":\"galgame2\"}"
+  },
+  "svc_voice_profile": {
+    "type": "string",
+    "description": "【兜底翻唱音色】当模型提供商和映射表均未指定音色时的最终兜底翻唱音色",
+    "default": "112"
+  },
+  "svc_segment_sec": {
+    "type": "int",
+    "description": "【副歌时长(秒)】智能乐句截取目标时长秒数（按歌词乐句/能量谷点定位，带平滑渐隐）",
+    "default": 36
+  },
+  "svc_n_step": {
+    "type": "int",
+    "description": "【扩散步数】Seed-VC 扩散推理步数（推荐 32~60，默认 50；步数越多重建越干净、音色越稳，速度略慢）",
+    "default": 50
+  },
+  "svc_cfg": {
+    "type": "float",
+    "description": "【CFG】Seed-VC 无分类器引导系数（0.1~1.0，默认 0.95；越大音色越贴近参考音色。1.0 为安全上限，过高易出 artifacts）",
+    "default": 0.95
+  },
+  "svc_prompt_vocal_sep": {
+    "type": "bool",
+    "description": "【参考音色先分离人声】仅当参考音频本身是带伴奏的整曲/混音时才开（可避免伴奏被当音色学进去）。音色库里的短人声样本已是干净人声，保持关闭，开启反而损伤音色遵循度",
+    "default": false
+  },
+  "svc_seed": {
+    "type": "int",
+    "description": "【种子】随机数种子（-1 为每次随机，非 -1 启用缓存）",
+    "default": -1
+  },
+  "svc_acapella": {
+    "type": "bool",
+    "description": "【输出清唱】开启后所有翻唱只输出换声后的人声干声、不混合伴奏；点唱时可用「清唱」关键词单次指定",
+    "default": false
+  },
+  "fallback_source": {
+    "type": "string",
+    "description": "【备用音源】QQ 音源 404/风控时自动经翻唱网关下载：auto=网易云→B站；netease=仅网易云；bilibili=仅B站；off=关闭",
+    "default": "auto"
+  },
+  "svc_timbre_eq": {
+    "type": "string",
+    "description": "【音色亮度 EQ】对所有音色统一套用的 ffmpeg 滤镜串（不区分音色）。Seed-VC 输出一般无需补偿，留空则不处理",
+    "default": ""
+  },
+  "timeout_sec": {
+    "type": "int",
+    "description": "【超时(秒)】单次翻唱推理与网络请求超时上限；长歌（4 分钟以上）含 MSST 分离 + 44.1kHz 推理建议 ≥ 900",
+    "default": 900
+  }
+}
