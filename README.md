@@ -1,4 +1,4 @@
-# astrbot_plugin_ace_singing (v1.10.2)
+# astrbot_plugin_ace_singing (v1.10.3)
 
 专注原声翻唱的 AstrBot 插件：**QQ 音乐搜歌 + Seed-VC V1 (44.1kHz) 神经歌声转换 + 智能乐句起唱吸附 + 人格专属翻唱声线 + 推理进度回传 + 全参数即时热更新**。
 
@@ -132,6 +132,31 @@ docker restart <AstrBot容器名>
 ```
 
 **兜底**：v1.10.2 起插件内置 `_patch_niquests_compat()`（v1.10.1 的兼容层因幂等判断误用 `getattr` 继承了父类标记，只补到 `Session` 而漏掉真正报错的 `AsyncSession`，请勿使用 v1.10.1），检测到旧版 niquests 时会自动吞掉该参数（旧版默认行为本就是接收响应 Cookie，语义等价），因此**只要同步了最新 `main.py`，不升级依赖也能用**；启动日志会打印 `niquests x.y.z 缺少 allow_incoming_cookies，已为 Session/AsyncSession 注入兼容层`。
+
+---
+
+### 点唱报「触发风控, 需登录或者安全验证」/ 搜索不到歌
+
+**现象**：日志出现 `Client search 调用异常: 触发风控, 需登录或者安全验证`，随后 `HTTP 兜底搜索失败: HTTP Error 500`，最终「翻唱失败」。
+
+**原因**：QQ 音乐按**出口 IP 限流**。频道/机房/高频请求的 IP 会被要求登录校验；`c.y.qq.com` 老搜索接口对该类 IP 直接返 500。
+
+**v1.10.3 起的三级检索兜底**（任一通路命中即返回，日志会标注命中方式）：
+
+| 顺序 | 通路 | 说明 |
+| :--- | :--- | :--- |
+| 1 | SDK `Client.search` | 有登录态时最稳，字段最全 |
+| 2 | `u.y.qq.com/cgi-bin/musicu.fcg` | 官方搜索 CGI（POST），未登录通常可用，偶发业务码 2001（限流） |
+| 3 | `c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg` | 联想接口，结果少但极少被风控 |
+
+**根治办法：扫码登录**（拿到 Cookie 后搜索带登录态，基本不再触发风控）
+
+```
+在 QQ 里对机器人发送：/qq登录
+用手机 QQ 音乐 App 扫码 → 凭据保存在 data/qq_credential.json
+```
+
+登录后若仍偶发风控，等 10~30 分钟让限流窗口过去再试。
 
 ---
 

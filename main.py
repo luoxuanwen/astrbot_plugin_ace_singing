@@ -616,7 +616,7 @@ def _qmc_unlock_data(data: bytes, ekey_str) -> tuple:
     "astrbot_plugin_ace_singing",
     "Wanch",
     "专注原声翻唱：QQ 音乐找歌 + Seed-VC V1 (44.1kHz) 神经歌声转换，支持人格专属翻唱音色映射与智能乐句吸附截取",
-    "1.10.2",
+    "1.10.3",
 )
 class AceSingingPlugin(Star):
     DEFAULT_VOICE_PROFILE = "112"
@@ -1052,38 +1052,104 @@ class AceSingingPlugin(Star):
         except Exception as e:
             logger.warning(f"[ace_singing] modules.search 调用异常: {e}")
 
-        # 3. 终极官方 HTTP 检索兜底（无需凭据，稳定高可用）
-        try:
-            loop = asyncio.get_running_loop()
-            def _http_search():
-                import urllib.parse
-                import urllib.request
-                import json
-                enc = urllib.parse.quote(keyword)
-                url = f"https://c.y.qq.com/soso/fcgi-bin/client_search_cp?p=1&n={num}&w={enc}&format=json"
-                req = urllib.request.Request(url, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Referer": "https://y.qq.com/",
-                })
-                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-                with opener.open(req, timeout=10) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                raw_list = (data.get("data") or {}).get("song", {}).get("list", [])
-                out = []
-                for s in raw_list:
-                    mid = s.get("songmid") or s.get("mid")
-                    name = s.get("songname") or s.get("name")
-                    singers = s.get("singer") or []
-                    if mid:
-                        out.append({"mid": mid, "name": name, "singer": singers})
-                return out
+        # 3. 官方 HTTP 检索兜底（无需凭据/登录态）
+        #    顺序说明：
+        #    a) musicu.fcg  —— 当前有效的搜索接口，未登录也能拿到列表
+        #    b) client_search_cp —— 老接口，已被 QQ 按出口 IP 风控，容器/机房 IP 常直接 500
+        #    注意：SDK 报「触发风控, 需登录或者安全验证」时说明该出口 IP 被限流，
+        #    此时单靠重试无用，必须靠下面这条不依赖登录态的接口兜住。
+        loop = asyncio.get_running_loop()
+        ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 
-            out_songs = await loop.run_in_executor(None, _http_search)
-            if out_songs:
-                return out_songs
-        except Exception as e:
-            logger.error(f"[ace_singing] HTTP 兜底搜索失败: {e}")
+        def _search_musicu() -> list:
+            import json
+            import urllib.request
+            body = {
+                "comm": {"ct": "19", "cv": "1859", "uin": "0"},
+                "req_0": {
+                    "method": "DoSearchForQQMusicDesktop",
+                    "module": "music.search.SearchCgiService",
+                    "param": {"num_per_page": str(num), "page_num": "1",
+                              "query": keyword, "search_type": 0},
+                },
+            }
+            req = urllib.request.Request(
+                "https://u.y.qq.com/cgi-bin/musicu.fcg",
+                data=json.dumps(body).encode(),
+                headers={"User-Agent": ua, "Referer": "https://y.qq.com/",
+                         "Content-Type": "application/json"},
+            )
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(req, timeout=10) as resp:
+                d = json.loads(resp.read().decode("utf-8"))
+            r0 = d.get("req_0") or {}
+            if r0.get("code") not in (0, None):
+                raise RuntimeError(f"musicu.fcg 业务码 {r0.get('code')}: {r0.get('msg') or ''}")
+            lst = (((r0.get("data") or {}).get("body") or {}).get("song") or {}).get("list", [])
+            out = []
+            for s in lst:
+                mid = s.get("mid") or s.get("songmid")
+                if mid:
+                    out.append({"mid": mid,
+                                "name": s.get("name") or s.get("songname") or s.get("title") or "",
+                                "singer": s.get("singer") or []})
+            return out
 
+        def _search_legacy() -> list:
+            import json
+            import urllib.parse
+            import urllib.request
+            url = ("https://c.y.qq.com/soso/fcgi-bin/client_search_cp"
+                   f"?p=1&n={num}&w={urllib.parse.quote(keyword)}&format=json")
+            req = urllib.request.Request(url, headers={"User-Agent": ua, "Referer": "https://y.qq.com/"})
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            raw_list = ((data.get("data") or {}).get("song") or {}).get("list", [])
+            out = []
+            for s in raw_list:
+                mid = s.get("songmid") or s.get("mid")
+                if mid:
+                    out.append({"mid": mid,
+                                "name": s.get("songname") or s.get("name") or "",
+                                "singer": s.get("singer") or []})
+            return out
+
+        def _search_smartbox() -> list:
+            """联想接口: 结果少(通常 1~10 条)但极少被风控, 作为最后一道兜底。"""
+            import json
+            import urllib.parse
+            import urllib.request
+            url = ("https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg?key="
+                   + urllib.parse.quote(keyword) + "&format=json")
+            req = urllib.request.Request(url, headers={"User-Agent": ua, "Referer": "https://y.qq.com/"})
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(req, timeout=10) as resp:
+                d = json.loads(resp.read().decode("utf-8"))
+            items = ((d.get("data") or {}).get("song") or {}).get("itemlist") or []
+            out = []
+            for s in items:
+                mid = s.get("mid") or s.get("songmid")
+                if mid:
+                    out.append({"mid": mid,
+                                "name": s.get("name") or s.get("songname") or "",
+                                "singer": [{"name": s.get("singer") or ""}] if s.get("singer") else []})
+            return out
+
+        for _name, _fn in (("musicu.fcg", _search_musicu),
+                           ("client_search_cp", _search_legacy),
+                           ("smartbox", _search_smartbox)):
+            try:
+                out_songs = await loop.run_in_executor(None, _fn)
+                if out_songs:
+                    logger.info(f"[ace_singing] HTTP 兜底检索命中({_name}): {len(out_songs)} 首")
+                    return out_songs
+            except Exception as e:
+                logger.warning(f"[ace_singing] HTTP 兜底({_name})失败: {e}")
+
+        logger.error("[ace_singing] 全部检索通道失败: SDK 触发风控且 HTTP 兜底无结果，"
+                     "请在 QQ 里发送 /qq登录 扫码登录后再试")
         return []
 
     async def _qq_lyric(self, c, mid: str):
