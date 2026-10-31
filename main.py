@@ -187,10 +187,16 @@ def _patch_niquests_compat() -> None:
         return
 
     ver = getattr(_nq, "__version__", "?")
-    patched = []
+    patched, already = [], 0
     for cls_name in ("Session", "AsyncSession"):
         cls = getattr(_nq, cls_name, None)
-        if cls is None or getattr(cls, "_ace_allow_incoming_shim", False):
+        # 注意：AsyncSession 继承自 Session，二者各自实现了 __init__。
+        # 因此幂等标记必须查类自身的 __dict__，不能用 getattr（会继承父类标记而误跳过，
+        # 导致只补了 Session、真正报错的 AsyncSession 没被补上）。
+        if cls is None:
+            continue
+        if cls.__dict__.get("_ace_allow_incoming_shim"):
+            already += 1
             continue
         try:
             params = inspect.signature(cls.__init__).parameters
@@ -214,6 +220,8 @@ def _patch_niquests_compat() -> None:
             f"已为 {'/'.join(patched)} 注入兼容层；建议执行 "
             f'pip install -U "niquests>=3.19" 对齐 qqmusic_api 0.8.2'
         )
+    elif already:
+        logger.info(f"[ace_singing] niquests {ver} 兼容层已就绪（重复调用，未重复注入）")
     else:
         logger.info(f"[ace_singing] niquests {ver} 原生支持 allow_incoming_cookies")
 
@@ -608,7 +616,7 @@ def _qmc_unlock_data(data: bytes, ekey_str) -> tuple:
     "astrbot_plugin_ace_singing",
     "Wanch",
     "专注原声翻唱：QQ 音乐找歌 + Seed-VC V1 (44.1kHz) 神经歌声转换，支持人格专属翻唱音色映射与智能乐句吸附截取",
-    "1.10.1",
+    "1.10.2",
 )
 class AceSingingPlugin(Star):
     DEFAULT_VOICE_PROFILE = "112"

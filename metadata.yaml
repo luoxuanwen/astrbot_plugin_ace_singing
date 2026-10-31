@@ -1,5 +1,5 @@
 name: astrbot_plugin_ace_singing
 desc: 专注原声翻唱：QQ 音乐找歌 + Seed-VC V1 (44.1kHz) 神经歌声转换，支持人格专属翻唱音色映射、智能乐句截取、推理进度回传、任务/缓存管理与智能音域抗破音
-version: v1.10.1
+version: v1.10.2
 author: Wanch
 repo: https://github.com/luoxuanwen/astrbot_plugin_ace_singing

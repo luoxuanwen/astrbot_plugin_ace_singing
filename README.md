@@ -1,4 +1,4 @@
-# astrbot_plugin_ace_singing (v1.10.1)
+# astrbot_plugin_ace_singing (v1.10.2)
 
 专注原声翻唱的 AstrBot 插件：**QQ 音乐搜歌 + Seed-VC V1 (44.1kHz) 神经歌声转换 + 智能乐句起唱吸附 + 人格专属翻唱声线 + 推理进度回传 + 全参数即时热更新**。
 
@@ -131,7 +131,7 @@ docker exec -it <AstrBot容器名> pip install -U "niquests[speedups]>=3.19"
 docker restart <AstrBot容器名>
 ```
 
-**兜底**：v1.10.1 起插件内置 `_patch_niquests_compat()`，检测到旧版 niquests 时会自动吞掉该参数（旧版默认行为本就是接收响应 Cookie，语义等价），因此**只要同步了最新 `main.py`，不升级依赖也能用**；启动日志会打印 `niquests x.y.z 缺少 allow_incoming_cookies，已为 Session/AsyncSession 注入兼容层`。
+**兜底**：v1.10.2 起插件内置 `_patch_niquests_compat()`（v1.10.1 的兼容层因幂等判断误用 `getattr` 继承了父类标记，只补到 `Session` 而漏掉真正报错的 `AsyncSession`，请勿使用 v1.10.1），检测到旧版 niquests 时会自动吞掉该参数（旧版默认行为本就是接收响应 Cookie，语义等价），因此**只要同步了最新 `main.py`，不升级依赖也能用**；启动日志会打印 `niquests x.y.z 缺少 allow_incoming_cookies，已为 Session/AsyncSession 注入兼容层`。
 
 ---
 
