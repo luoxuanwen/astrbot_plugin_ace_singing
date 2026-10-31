@@ -559,7 +559,7 @@ def _qmc_unlock_data(data: bytes, ekey_str) -> tuple:
     "astrbot_plugin_ace_singing",
     "Wanch",
     "专注原声翻唱：QQ 音乐找歌 + Seed-VC V1 (44.1kHz) 神经歌声转换，支持人格专属翻唱音色映射与智能乐句吸附截取",
-    "1.9.3",
+    "1.10.0",
 )
 class AceSingingPlugin(Star):
     DEFAULT_VOICE_PROFILE = "112"
@@ -729,7 +729,7 @@ class AceSingingPlugin(Star):
 
     def _get_cover_api_base(self) -> str:
         """从用户下拉选择的翻唱提供商中动态解析 API Base，支持平滑兜底"""
-        default_base = "http://127.0.0.1:6767"
+        default_base = "http://127.0.0.1:18000"
         if not getattr(self, "cover_provider_id", ""):
             return default_base
         try:
